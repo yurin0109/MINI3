@@ -139,13 +139,19 @@ df.to_csv('정책브리핑_수집.csv', index=False, encoding='utf-8-sig')
 print( "저장 파일 : 정책브리핑_수집.csv" )
 # CSV 저장은 전체 페이지 수집과 나머지 항목 추출을 작성한 뒤 추가한다.
 # df.to_csv('data/raw/정책브리핑_수집.csv', index=False, encoding='utf-8-sig')
+
+# [4. 데이터 전처리]
+import asyncio
+from playwright.async_api import async_playwright
 import pandas as pd
 
 df = pd.read_csv('정책브리핑_수집중.csv')
-# [4. 데이터 전처리]
+print("원본 기사 수: ", len(df))
+
 # 4-1 (중복 제거): 검색어끼리 겹치는 기사를 drop_duplicates('제목') 으로 제거한다. (345 → 265건)
 df = df.drop_duplicates('제목').reset_index(drop=True)
-df.shape
+print("중복 제거 후: ", len(df))
+
 # 4-2 (1차 자동 필터): 정책브리핑 검색은 검색어를 단어로 쪼개서 찾아 무관 기사가 많이 섞인다.
 #                     (예: '고령운전자' 검색에 환경부 홍수 대책 기사가 '고령'·'운전자' 를 따로 포함해서 걸린다)
 #                     제목에 '고령|노인|어르신|면허' 가 있고, 제목+요약에 '운전|교통|보행|이동|버스|면허' 가 있는 기사만 남긴다.
@@ -159,16 +165,16 @@ df.shape
 조건B = 전체내용.str.contains('운전|교통|보행|이동|버스|면허')
 
 # 두 조건에서 동시에 만족하는 기사 추출
-필터링 = df[조건A & 조건B]
-
+필터링 = df[조건A & 조건B].copy()
 print("필터링 후:", len(필터링))
 # 4-3 (본문 수집): 정책뉴스는 3-2 ~ 3-4 와 같은 방식으로 브라우저를 열고 링크마다 await 페이지.goto(링크) 한 뒤
 #                  본문 = await 페이지.query_selector('div.view_cont') → await 본문.inner_text() 로 본문을 모은다.
 #                  ※ 보도자료는 본문이 대부분 첨부파일(hwpx/pdf)에만 있어 제목+요약으로 분류한다.
+필터링['본문'] = ''
+
 정책뉴스 = 필터링[필터링['종류']=='정책뉴스']
-링크 = 정책뉴스.iloc[0]['링크']
-import asyncio
-from playwright.async_api import async_playwright
+
+print("정책뉴스 수: ", len(정책뉴스))
 
 async def 본문수집():
     async with async_playwright() as p:
@@ -177,22 +183,33 @@ async def 본문수집():
 
         for i in range(len(정책뉴스)):
             링크 = 정책뉴스.iloc[i]['링크']
-            await page.goto(링크)
-            await page.wait_for_timeout(5000)
-            본문 = await page.query_selector('div.view_cont')
+            행번호 = 정책뉴스.index[i]
 
-            if 본문 is not None:
-                본문내용 = await 본문.inner_text()
-                print(본문내용)
-            else:
-                print("본문을 찾지 못했습니다.")
+            try:
+                await page.goto(링크)
+                await page.wait_for_timeout(5000)
+                본문 = await page.query_selector('div.view_cont')
+
+                if 본문 is not None:
+                    본문내용 = await 본문.inner_text()
+                    필터링.loc[행번호,'본문'] = 본문내용
+                    print( i + 1, "번 기사 본문 저장 완료")
+                else:
+                    print("본문을 찾지 못했습니다.")
+            except Exception as e:
+                print( i + 1, "번 기사 수집오류:", e)
         await browser.close()
 
 asyncio.run(본문수집())
 
 # 4-4 (2차 수작업 분류): 결과를 to_csv 로 저장해 엑셀에서 열고, '대책유형' 열에 아래 기준표의 이름 또는 '제외' 를 적는다.
-필터링 = 필터링.copy()
-필터링['본문'] = ''
+print("전체 기사 수: ", len(필터링))
+print("정책뉴스 수: ", len(정책뉴스))
+print("본문 저장된 기사 수: ", len(필터링[필터링['본문'] != '']))
+
+필터링.to_csv('정책브리핑_분류작업.csv', index=False, encoding='utf-8-sig')
+print("분류작업 CSV 저장 완료")
+
 #   ① 운전자·차량: 페달 오조작 방지 장치, 첨단 안전장치 등
 #   ② 면허·적성: 조건부 면허, 적성검사, 면허 자진반납 제도
 #   ③ 보행 환경: 노인 보행자 사고 다발지점 정비, 보호구역 등
@@ -200,6 +217,7 @@ asyncio.run(본문수집())
 #   ⑤ 기타: 사고 분석·조사 등
 #   제외: 통계 발표(예: 고령자 통계), 복지·주거·인구정책 일반, 단어만 겹치는 기사
 #   ※ 기준표를 먼저 정하고 분류한다. 애매한 사례는 다른 팀원 1명과 교차 확인하고 이유를 적는다.
+
 
 # 4-5 (사례 묶기): 같은 날·같은 부처의 보도자료와 정책뉴스는 같은 대책이므로 1개 사례로 묶는다. (이중 집계 방지)
 #                  (힌트: '제외' 를 뺀 뒤 drop_duplicates(['날짜', '부처', '대책유형']) ) → 최종 약 7건
@@ -209,11 +227,7 @@ asyncio.run(본문수집())
 # 4-7 (결측치 처리): 요약이 비어 있는 보도자료는 제목만으로 분류하고 그 사실을 기록한다. (임의로 채우지 않는다)
 
 # 4-8 (저장): 사례번호, 날짜, 연도, 부처, 제목, 대책유형, 종류, 링크 컬럼을 data/clean/정제_D_정책.csv 로 저장한다.
-
-
-
-
-
+# ===============================================================================================================================
 # [5. 데이터 시각화 및 분석]
 # 5-1 (가설 2 - 대책 타임라인): plt.scatter(x=날짜, y=대책유형) 으로 사례 1건을 점 1개로 그린다.
 #                              (수업 참고: day09/g-01.py 3번 산점도) → 이동권·대중교통 점이 2024년에 처음 나오면 가설 2 채택
