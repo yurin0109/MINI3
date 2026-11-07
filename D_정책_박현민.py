@@ -151,13 +151,48 @@ df.shape
 #                     제목에 '고령|노인|어르신|면허' 가 있고, 제목+요약에 '운전|교통|보행|이동|버스|면허' 가 있는 기사만 남긴다.
 #                     df[ df['제목'].str.contains('고령|노인|어르신|면허') & (df['제목'] + ' ' + df['요약']).str.contains('운전|교통|보행|이동|버스|면허') ]
 #                     → 22건 (수업 참고: day08/Practice3.py 문제 3 & 연산자)
+# 조건 A : 제목에 고령,노안,어르신, 면허가 포함되는지 확인
+조건A = df['제목'].fillna('').str.contains('고령|노인|어르신|면허')
 
+# 조건 B : 제목 + 요약
+전체내용 = df['제목'].fillna('') + ' ' + df['요약'].fillna('')
+조건B = 전체내용.str.contains('운전|교통|보행|이동|버스|면허')
 
+# 두 조건에서 동시에 만족하는 기사 추출
+필터링 = df[조건A & 조건B]
+
+print("필터링 후:", len(필터링))
 # 4-3 (본문 수집): 정책뉴스는 3-2 ~ 3-4 와 같은 방식으로 브라우저를 열고 링크마다 await 페이지.goto(링크) 한 뒤
 #                  본문 = await 페이지.query_selector('div.view_cont') → await 본문.inner_text() 로 본문을 모은다.
 #                  ※ 보도자료는 본문이 대부분 첨부파일(hwpx/pdf)에만 있어 제목+요약으로 분류한다.
+정책뉴스 = 필터링[필터링['종류']=='정책뉴스']
+링크 = 정책뉴스.iloc[0]['링크']
+import asyncio
+from playwright.async_api import async_playwright
+
+async def 본문수집():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=False)
+        page = await browser.new_page()
+
+        for i in range(len(정책뉴스)):
+            링크 = 정책뉴스.iloc[i]['링크']
+            await page.goto(링크)
+            await page.wait_for_timeout(5000)
+            본문 = await page.query_selector('div.view_cont')
+
+            if 본문 is not None:
+                본문내용 = await 본문.inner_text()
+                print(본문내용)
+            else:
+                print("본문을 찾지 못했습니다.")
+        await browser.close()
+
+asyncio.run(본문수집())
 
 # 4-4 (2차 수작업 분류): 결과를 to_csv 로 저장해 엑셀에서 열고, '대책유형' 열에 아래 기준표의 이름 또는 '제외' 를 적는다.
+필터링 = 필터링.copy()
+필터링['본문'] = ''
 #   ① 운전자·차량: 페달 오조작 방지 장치, 첨단 안전장치 등
 #   ② 면허·적성: 조건부 면허, 적성검사, 면허 자진반납 제도
 #   ③ 보행 환경: 노인 보행자 사고 다발지점 정비, 보호구역 등
@@ -174,6 +209,9 @@ df.shape
 # 4-7 (결측치 처리): 요약이 비어 있는 보도자료는 제목만으로 분류하고 그 사실을 기록한다. (임의로 채우지 않는다)
 
 # 4-8 (저장): 사례번호, 날짜, 연도, 부처, 제목, 대책유형, 종류, 링크 컬럼을 data/clean/정제_D_정책.csv 로 저장한다.
+
+
+
 
 
 # [5. 데이터 시각화 및 분석]
