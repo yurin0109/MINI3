@@ -1,3 +1,7 @@
 *.csv
 .venv/
 *.xlsx
+
+# 팀 공유용 csv
+!정책브리핑_분류완료.csv
+!data/clean/정제_D_정책.csv
