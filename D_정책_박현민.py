@@ -145,7 +145,7 @@ import asyncio
 from playwright.async_api import async_playwright
 import pandas as pd
 
-df = pd.read_csv('정책브리핑_수집중.csv')
+df = pd.read_csv('정책브리핑_수집.csv', encoding='utf-8-sig')
 print("원본 기사 수: ", len(df))
 
 # 4-1 (중복 제거): 검색어끼리 겹치는 기사를 drop_duplicates('제목') 으로 제거한다. (345 → 265건)
@@ -236,3 +236,4 @@ print("분류작업 CSV 저장 완료")
 #                              또, 처음에 requests + get_text(' ') 로 받았을 때는 검색어 강조 표시 앞뒤에 띄어쓰기가 끼어
 #                              "고령 자 통계" 처럼 제목이 바뀌어 중복이 덜 걸러졌다 → inner_text() 는 화면에 보이는 그대로 가져와 해결.
 # 6-5 (수집처 · 검색어 선택 이유): 네이버 robots.txt Disallow: / → 정책브리핑 / 한쪽 대책 단어는 검색어에서 제외
+
