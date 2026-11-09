@@ -138,16 +138,26 @@ print(df[df['전년대비_%'].abs() > 10][['연도', '시도명', '전년대비_
 # 기록: 2023년 충북 +21.6 · 대전 −15.1 · 세종 +13.6 · 경북 −12.6 · 경남 +12.0 · 전남 +11.1
 #       2024년 대전 +19.2 · 인천 −14.2 · 세종 +10.2 → 조사·집계 기준이 바뀌었을 가능성
 
-# 4-7 시각화: 전년 대비 증감률 히트맵 (데이터 리터러시, B 없어도 실행됨)
-증감표 = df.pivot(index='시도명', columns='연도', values='전년대비_%')[[2023, 2024]]
-plt.figure(figsize=(6, 8))
-sns.heatmap(증감표, annot=True, fmt='+.1f', cmap='RdBu_r', center=0, vmin=-25, vmax=25,
-            linewidths=2, linecolor='white', cbar_kws={'label': '전년 대비 증감률 (%)'})
-plt.title('정류장 수 전년 대비 증감률 (%) : |값| > 10 이면 집계 기준 변화 가능성')
-plt.xlabel('')
+# 4-7 시각화: 1년 새 ±10% 넘게 바뀐 시도만 막대로 (데이터 리터러시)
+약칭 = {v: k for k, v in 시도매핑.items()}                      # 서울특별시 → 서울 (그래프 라벨용)
+급변 = df[df['전년대비_%'].abs() > 10].copy()
+급변['라벨'] = 급변['연도'].astype(str) + ' ' + 급변['시도명'].map(약칭)
+급변 = 급변.sort_values('전년대비_%')
+급변색 = {2023: '#F2B705', 2024: '#2E9E4F'}
+plt.figure(figsize=(9, 5.2))
+막대 = plt.barh(급변['라벨'], 급변['전년대비_%'], color=[급변색[y] for y in 급변['연도']], height=0.6)
+plt.bar_label(막대, labels=[f'{v:+.1f}%' for v in 급변['전년대비_%']], padding=4)
+for 기준 in (-10, 10):
+    plt.axvline(기준, color='gray', linestyle='--', linewidth=1.2)   # ±10% 기준선
+plt.axvline(0, color='#555', linewidth=1)
+plt.xlim(-25, 28)
+plt.title(f'정류장 수가 1년 새 ±10% 넘게 바뀐 {len(급변)}건 → 집계 기준 변화 가능성', loc='left')
+plt.xlabel('전체 버스정류장 전년 대비 증감률 (%)')
 plt.ylabel('')
+from matplotlib.patches import Patch
+plt.legend(handles=[Patch(color=c, label=f'{y}년') for y, c in 급변색.items()], loc='upper left', frameon=False)
 plt.tight_layout()
-plt.savefig(그래프폴더 + '/C_정류장_전년대비_증감률.png', dpi=150, bbox_inches='tight')
+plt.savefig(그래프폴더 + '/C_발표_급변9건.png', dpi=200, bbox_inches='tight')
 plt.show()
 
 # 4-8 (저장)
@@ -158,7 +168,7 @@ print('\n[4-8] 최종 정제 파일:', 정제.shape, '(기대: (51, 6))')
 print('저장 완료: ./data/정제_C_정류장.csv')
 
 
-# [5. 데이터 시각화 및 분석] - B 파일이 있어야 실행됨
+# [5. 데이터 시각화 및 분석]
 if B있음:
     연도색 = {2022: '#E5484D', 2023: '#F2B705', 2024: '#2E9E4F'}   # 빨강 · 노랑 · 초록 (5-1, 5-2 공통)
 
@@ -181,6 +191,21 @@ if B있음:
         print(f"{연도}: 최대 {최대['시도명']} {최대['정류장_천명당']:.2f} / 최소 {최소['시도명']} {최소['정류장_천명당']:.2f} "
               f"→ {배수:.2f}배 → {'채택' if 배수 >= 2 else '기각'}")
 
+    # 5-1 발표용: 2024년만, 특별·광역시(파랑) vs 도(빨강) - 3년 모두 같은 경향이라 최근 연도를 대표로 표시
+    유형색 = {'특별·광역시': '#3f8ae2', '도': '#E5484D'}
+    df['구분'] = np.where(df['시도명'].str.contains('특별시|광역시|특별자치시'), '특별·광역시', '도')
+    g24 = df[df['연도'] == 2024].sort_values('정류장_천명당')
+    plt.figure(figsize=(9, 7))
+    막대 = plt.barh(g24['시도명'].map(약칭), g24['정류장_천명당'], color=[유형색[k] for k in g24['구분']], height=0.65)
+    plt.bar_label(막대, fmt='%.1f', padding=3)
+    최대, 최소 = g24['정류장_천명당'].max(), g24['정류장_천명당'].min()
+    plt.title(f"2024년 고령 인구 천 명당 정류장 수: 최대 {최대:.1f}개 ÷ 최소 {최소:.1f}개 = {최대 / 최소:.1f}배", loc='left')
+    plt.xlabel('정류장 수 (65세 이상 인구 천 명당 개)')
+    plt.legend(handles=[Patch(color=c, label=k) for k, c in 유형색.items()], loc='lower right', frameon=False)
+    plt.tight_layout()
+    plt.savefig(그래프폴더 + '/C_발표_가설1_2024.png', dpi=200, bbox_inches='tight')
+    plt.show()
+
     # 5-2 (가설 2 - 반납률 관계)
     plt.figure(figsize=(8, 6))
     for 연도 in [2022, 2023, 2024]:
@@ -200,13 +225,55 @@ if B있음:
     for 연도 in [2022, 2023, 2024]:
         g = df[df['연도'] == 연도]
         r = g[['정류장_천명당', '반납률']].corr().iloc[0, 1]
-        g2 = g[g['시도명'] != '세종특별자치시']                              # 튀는 시도 제외 시 r (팀 공통 주의사항)
-        r2 = g2[['정류장_천명당', '반납률']].corr().iloc[0, 1]
+        r_세종 = g[g['시도명'] != '세종특별자치시'][['정류장_천명당', '반납률']].corr().iloc[0, 1]   # 튀는 시도 제외 시 r
+        r_제주 = g[g['시도명'] != '제주특별자치도'][['정류장_천명당', '반납률']].corr().iloc[0, 1]
+        try:
+            from scipy import stats                                        # p값 (scipy 가 없으면 생략)
+            p = f", p = {stats.pearsonr(g['정류장_천명당'], g['반납률'])[1]:.4f}"
+        except ImportError:
+            p = ''
         결과.append(r >= 0.4)
-        print(f'{연도}: r = {r:.3f} → {"조건 충족" if r >= 0.4 else "조건 미충족"}  (세종 제외 r = {r2:.3f})')
+        print(f'{연도}: r = {r:.3f}{p} → {"조건 충족" if r >= 0.4 else "조건 미충족"}  (세종 제외 r = {r_세종:.3f}, 제주 제외 r = {r_제주:.3f})')
     print('가설 2:', '채택' if all(결과) else '기각')
 
-    # 5-3 (인사이트 정리) - 실행 결과 숫자를 보고 채우기
+    # 5-2 발표용 ①: 2024년 시도 이름이 붙은 산점도 (특별·광역시 vs 도)
+    r24 = g24['정류장_천명당'].corr(g24['반납률'])
+    plt.figure(figsize=(9, 6))
+    sns.regplot(data=g24, x='정류장_천명당', y='반납률', scatter=False, ci=None, color='#9aa0a6',
+                line_kws={'linewidth': 2, 'linestyle': '--'})
+    for k, c in 유형색.items():
+        t = g24[g24['구분'] == k]
+        plt.scatter(t['정류장_천명당'], t['반납률'], s=110, color=c, edgecolor='white', linewidth=1.5, label=k, zorder=3)
+    for _, 행 in g24.iterrows():
+        plt.annotate(약칭[행['시도명']], (행['정류장_천명당'], 행['반납률']), xytext=(6, 4), textcoords='offset points', fontsize=10)
+    plt.title(f'2024년: 정류장이 많은 도 지역일수록 반납률이 낮음 (r = {r24:.2f})', loc='left')
+    plt.xlabel('정류장 수 (65세 이상 인구 천 명당 개)')
+    plt.ylabel('면허 반납률 (65세 이상 인구 천 명당 건)')
+    plt.legend(frameon=False, loc='upper right')
+    plt.tight_layout()
+    plt.savefig(그래프폴더 + '/C_발표_산점도_2024.png', dpi=200, bbox_inches='tight')
+    plt.show()
+
+    # 5-2 발표용 ②: 2024년 특별·광역시 vs 도 (평균 X → 정류장·인구·반납 건수를 합산 후 다시 나눔)
+    유형 = g24.groupby('구분')[['전체버스정류장', '65세이상인구']].sum()
+    유형['반납건수'] = g24.assign(반납건수=g24['반납률'] * g24['65세이상인구'] / 1000).groupby('구분')['반납건수'].sum()
+    유형['정류장_천명당'] = 유형['전체버스정류장'] / 유형['65세이상인구'] * 1000
+    유형['반납률'] = 유형['반납건수'] / 유형['65세이상인구'] * 1000
+    유형 = 유형.loc[['특별·광역시', '도']]
+    print('\n[5-2 추가] 2024년 특별·광역시 vs 도\n', 유형[['정류장_천명당', '반납률']].round(2))
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4.6))
+    for ax, 열, 제목 in [(axs[0], '정류장_천명당', '고령 인구 천 명당 정류장 수 (개)'), (axs[1], '반납률', '면허 반납률 (천 명당 건)')]:
+        b = ax.bar(유형.index, 유형[열], color=[유형색[k] for k in 유형.index], width=0.55)
+        ax.bar_label(b, fmt='%.2f', padding=3)
+        ax.set_title(제목)
+        ax.set_ylim(0, 유형[열].max() * 1.2)
+    배 = 유형.loc['도', '정류장_천명당'] / 유형.loc['특별·광역시', '정류장_천명당']
+    fig.suptitle(f'2024년 특별·광역시 vs 도: 정류장은 도가 약 {배:.1f}배 많지만, 반납률은 대도시가 더 높음', x=0.01, ha='left')
+    plt.tight_layout()
+    plt.savefig(그래프폴더 + '/C_발표_시도비교_2024.png', dpi=200, bbox_inches='tight')
+    plt.show()
+
+    # 5-3 (인사이트 정리)
     # 5-1 발견: 제주가 가장 많고 부산이 가장 적어 3년 모두 약 6.5~6.8배 차이 → 가설 1 채택
     # 5-2 발견: r = -0.74 / -0.81 / -0.72 → 정류장이 많은 시도일수록 반납률이 낮은 경향 (예상과 반대) → 가설 2 기각
     #           정류장_천명당이 높은 곳은 면적이 넓은 도 지역이라, 정류장 '수'가 접근성보다 지역 넓이를 반영한 것으로 보임
